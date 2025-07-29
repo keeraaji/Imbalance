@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, url_for
+from flask import Flask, request, jsonify, render_template, url_for, send_from_directory
 from datetime import datetime, timedelta
 from get_data import fetch_energinet_now_data
 from src.plots import generate_interactive_plot
@@ -7,30 +7,36 @@ import time
 
 app = Flask(__name__)
 
-# ✅ Helper: Save plot to static and return cache-busted URL
+#  Custom folder to store plot HTMLs
+PLOT_FOLDER = os.path.join(os.getcwd(), 'plots')
+os.makedirs(PLOT_FOLDER, exist_ok=True)
+
+#  Save plot and return dynamic URL
 def save_plot(fig, filename):
-    static_dir = os.path.join(os.getcwd(), 'static')
-    os.makedirs(static_dir, exist_ok=True)  # Ensure static/ exists
-    filepath = os.path.join(static_dir, filename)
-    fig.write_html(filepath, auto_open=False)
-    timestamp = int(time.time())  # for cache busting
-    return url_for('static', filename=filename) + f'?v={timestamp}'
+    filepath = os.path.join(PLOT_FOLDER, filename)
+    fig.write_html(filepath)
+    timestamp = int(time.time())
+    return url_for('serve_plot', filename=filename) + f'?v={timestamp}'
+
+#  Route to serve plot files dynamically
+@app.route('/plots/<path:filename>')
+def serve_plot(filename):
+    return send_from_directory(PLOT_FOLDER, filename)
 
 @app.route('/', methods=['GET', 'POST'])
 def home():
     try:
-        # 🔄 Load latest data
         df = fetch_energinet_now_data(2880)
         df.set_index("TimeDK", inplace=True)
 
-        # ⏱ Time filtering: last 14 full days until 1 hour ago
         now = datetime.now()
         end_time = now - timedelta(hours=1)
         time_now = now.strftime("%H:%M:%S")
         start_time = end_time - timedelta(days=14) - timedelta(hours=int(time_now.split(":")[0]))
+
         filtered_df = df.loc[(df.index >= start_time) & (df.index <= end_time)]
 
-        # -------- DK1 Full Period --------
+        # DK1 - full
         filtered_dk1 = filtered_df[filtered_df['PriceArea'] == 'DK1']
         plot_url = save_plot(generate_interactive_plot(
             ImbalancePriceDKK=filtered_dk1['ImbalancePriceEUR'],
@@ -39,19 +45,19 @@ def home():
             title="Electricity Prices and Imbalance Prices DK1"
         ), 'plot.html')
 
-        # DK1 by 15-minute quarters
+        # DK1 - quarters
         plot_urls_dk1 = []
         for i, minute in enumerate([0, 15, 30, 45]):
-            q_filtered = filtered_dk1[filtered_dk1.index.minute == minute]
+            filtered = filtered_dk1[filtered_dk1.index.minute == minute]
             fig = generate_interactive_plot(
-                ImbalancePriceDKK=q_filtered['ImbalancePriceEUR'],
-                SpotPriceDKK=q_filtered['SpotPriceEUR'],
-                BalancingDemand=q_filtered['BalancingDemand'],
+                ImbalancePriceDKK=filtered['ImbalancePriceEUR'],
+                SpotPriceDKK=filtered['SpotPriceEUR'],
+                BalancingDemand=filtered['BalancingDemand'],
                 title=f"Electricity Prices and Imbalance Prices DK1 quarter {i+1}"
             )
-            plot_urls_dk1.append(save_plot(fig, f'plot{i+3}.html'))  # plot3 to plot6
+            plot_urls_dk1.append(save_plot(fig, f'plot{i+3}.html'))
 
-        # -------- DK2 Full Period --------
+        # DK2 - full
         filtered_dk2 = filtered_df[filtered_df['PriceArea'] == 'DK2']
         plot_url2 = save_plot(generate_interactive_plot(
             ImbalancePriceDKK=filtered_dk2['ImbalancePriceEUR'],
@@ -60,19 +66,18 @@ def home():
             title="Electricity Prices and Imbalance Prices DK2"
         ), 'plot2.html')
 
-        # DK2 by 15-minute quarters
+        # DK2 - quarters
         plot_urls_dk2 = []
         for i, minute in enumerate([0, 15, 30, 45]):
-            q_filtered = filtered_dk2[filtered_dk2.index.minute == minute]
+            filtered = filtered_dk2[filtered_dk2.index.minute == minute]
             fig = generate_interactive_plot(
-                ImbalancePriceDKK=q_filtered['ImbalancePriceEUR'],
-                SpotPriceDKK=q_filtered['SpotPriceEUR'],
-                BalancingDemand=q_filtered['BalancingDemand'],
+                ImbalancePriceDKK=filtered['ImbalancePriceEUR'],
+                SpotPriceDKK=filtered['SpotPriceEUR'],
+                BalancingDemand=filtered['BalancingDemand'],
                 title=f"Electricity Prices and Imbalance Prices DK2 quarter {i+1}"
             )
             plot_urls_dk2.append(save_plot(fig, f'plot2_{i}.html'))
 
-        # ✅ Render the template with all plots
         return render_template(
             'view_data.html',
             plot=plot_url,
