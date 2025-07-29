@@ -4,7 +4,8 @@ from get_data import fetch_energinet_now_data
 from src.plots import generate_interactive_plot
 import os
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
+
 
 
 
