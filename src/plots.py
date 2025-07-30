@@ -1,9 +1,6 @@
 import plotly.graph_objs as go
 import pandas as pd
 
-import plotly.graph_objs as go
-import pandas as pd
-
 def generate_interactive_plot(ImbalancePriceDKK, SpotPriceDKK, BalancingDemand, title):
     # Combine and align all Series
     data = pd.DataFrame({
